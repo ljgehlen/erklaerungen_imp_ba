@@ -1,8 +1,6 @@
-Bugs:
-- erster Aufruf kann Fehler mit untergeordneten Ordnern der datasets und AG_NEWS verursachen
+Hallo Rosario, hallo Lars,
 
--------------------------------------------------------------------------------------------------
-readme by Sebastian:
+Hier kommt Code fuer die NLP Daten.
 
 Dependencies/ getestet mit (etwas veraltet):
 - Python 3.9.6
@@ -29,3 +27,8 @@ Dateien:
 - train
     - minimales setup um ein Modell fuer n Batches zu trainieren. Das Training des CNN belegt ~10GB Vram, ggf. die Batch-Size anpassen oder auf CPU wechseln.
     - hier wird das Test-Set einfach aus dem gelieferten DataLoader gezogen, hier sollt ihr ja aber kuenftig das Set laden welches wir noch aussuchen muessen.
+
+Ich hoffe der Code hilft euch weiter, zoegert bei Fragen aber nicht uns zu schreiben.
+
+viele Gruesse
+Sebastian

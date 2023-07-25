@@ -12,8 +12,6 @@ DATA_ROOT = './datasets'
 # ----------------------------------------------------------------------------------------------------------------------
 
 
-# author: Sebastian
-
 class TorchRandomSeed(object):
     """
     Class to be used when opening a with clause. On enter sets the random seed for torch based sampling, restores previous state on exit
@@ -99,5 +97,5 @@ def get_agnews(random_state, batch_sizes=(64, 200), root=DATA_ROOT):
         test_loader = DataLoader(test_iter, batch_size=batch_sizes[-1], shuffle=True, collate_fn=collate_batch,
                                  generator=gen_test)
 
-    return train_loader, test_loader, size_vocab, 4
+    return train_loader, test_loader, size_vocab, 4, vocab
 
