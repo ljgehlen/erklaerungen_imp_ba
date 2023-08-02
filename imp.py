@@ -5,7 +5,7 @@ import torch.nn.utils.prune as prune
 import numpy as np
 from torch.utils.data import DataLoader
 from train import train
-from datasets import get_agnews
+from datasets import get_agnews_prepraped
 from models import SentenceCNN, BiLSTMClassif
 from torch.optim import Adam
 
@@ -181,7 +181,7 @@ def create_imp_model(code, model_type,
 
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
-    train_set, test_set, vocab_size, n_classes, vocab = get_agnews(random_state=42,
+    train_set, test_set, vocab_size, n_classes, vocab = get_agnews_prepraped(random_state=42,
                                                                    batch_sizes=(size_train_batch, size_test_batch))
 
     X_test, Y_test = next(iter(test_set))
