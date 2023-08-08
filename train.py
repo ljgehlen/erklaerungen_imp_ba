@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
 
 
 def _get_outputs(inference_fn, data, model, device, batch_size=256):
@@ -22,11 +23,7 @@ def _get_outputs(inference_fn, data, model, device, batch_size=256):
             raise re
 
 
-def _get_predictions(inference_fn, data, model, device):
-    return torch.argmax(_get_outputs(inference_fn, data, model, device), dim=1)
-
-
-def validate(inference_fn, model, X, Y):
+def validate(inference_fn, model, x, y, loss_fn):
 
     if inference_fn is None:
         inference_fn = model
@@ -34,34 +31,36 @@ def validate(inference_fn, model, X, Y):
     model.eval()
     device = next(model.parameters()).device
 
-    _y_pred = _get_predictions(inference_fn, X, model, device)
+    out = _get_outputs(inference_fn, x, model, device)
+    _y_pred = torch.argmax(out, dim=1)
+    loss = loss_fn(out, y)
     model.train()
 
-    acc = torch.mean((Y == _y_pred).to(torch.float)).detach().cpu().item()  # mean expects float, not bool (or int)
-    return acc
+    acc = torch.mean((y == _y_pred).to(torch.float)).detach().cpu().item()  # mean expects float, not bool (or int)
+    return acc, loss
 
 
-def train(model, optim, loss_fn, tr_data: DataLoader, te_data: tuple, inference_fn=None, \
-               n_batches_max=10, device='cuda'):
+def train(model, optim, loss_fn, tr_data: DataLoader, te_data: DataLoader, inference_fn=None, device='cuda'):
     model.to(device)
-    acc_val = []
-    n_batches = 0
+    test_acc_val = []
+    test_loss_val = []
+    train_loss = 0.0
     _epochs = 0
-    while n_batches <= n_batches_max:
-        for i, (text, labels) in enumerate(tr_data, 0):
-            text = text.to(device)
-            labels = labels.to(device)
-            out = model(text)
-            loss = loss_fn(out, labels)
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
+    for text, labels in tqdm(tr_data):
+        text = text.to(device)
+        labels = labels.to(device)
+        out = model(text)
+        loss = loss_fn(out, labels)
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+        train_loss += loss.item()
 
-            n_batches += 1
-            if n_batches > n_batches_max:
-                break
-
-    acc_val.append(validate(inference_fn, model, *te_data))
-    print("accuracies over test set")
-    print(acc_val)
-    return model, acc_val
+    for text, labels in te_data:
+        test_acc, test_loss = validate(inference_fn, model, text, labels, loss_fn)
+        test_acc_val.append(test_acc)
+        test_loss_val.append(test_loss)
+    acc = torch.mean(torch.tensor(test_acc_val))
+    test_loss = torch.mean(torch.tensor(test_loss_val))
+    average_train_loss = train_loss / len(tr_data)
+    return model, acc.item(), test_loss.item(), average_train_loss

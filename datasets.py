@@ -1,14 +1,10 @@
 import torch
-import os
-import pickle
-from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from torchtext.data.utils import get_tokenizer
 from torchtext.data.functional import to_map_style_dataset
 from torchtext.vocab import build_vocab_from_iterator
 from torchtext.datasets import AG_NEWS
-from torchdata.datapipes.iter import IterableWrapper
 # ----------------------------------------------------------------------------------------------------------------------
 
 DATA_ROOT = './datasets'
@@ -99,90 +95,6 @@ def get_agnews(random_state, batch_sizes=(64, 200), root=DATA_ROOT):
         train_loader = DataLoader(train_iter, batch_size=batch_sizes[0],
                                   shuffle=True, collate_fn=collate_batch, generator=gen_train)
         test_loader = DataLoader(test_iter, batch_size=batch_sizes[-1], shuffle=True, collate_fn=collate_batch,
-                                 generator=gen_test)
-
-    return train_loader, test_loader, size_vocab, 4, vocab
-
-
-def get_agnews_prepraped(random_state, batch_sizes=(64, 200), root=DATA_ROOT):
-    """load AGNews dataset from torchtext"""
-    # -, classes = 4
-    def label_pipeline(input):
-        return int(input) - 1
-
-    with TorchRandomSeed(random_state):
-        # base vocab in collate function on training data
-        gen_train = torch.Generator(); gen_train.manual_seed(random_state)
-        gen_test = torch.Generator(); gen_test.manual_seed(random_state)
-
-        train_iter = AG_NEWS(root, split='train')
-        train_iter = to_map_style_dataset(train_iter)
-
-        test_iter = AG_NEWS(root, split='test')
-        test_iter = to_map_style_dataset(test_iter)
-
-        vocab = _get_vocab('AG_NEWS', train_iter)
-        collate_batch, size_vocab = _build_collate_fn(vocab, label_pipeline)
-
-        train_prep = None
-        test_prep = None
-
-        if os.path.isfile('./datasets/AG_NEWS/dataTrain' + '_train_' + str(batch_sizes[0]) + '_test_' + str(batch_sizes[-1])) and \
-                os.path.isfile('./datasets/AG_NEWS/dataTest' + '_train_' + str(batch_sizes[0]) + '_test_' + str(batch_sizes[-1])):
-            print("Load Prepared Data")
-            with open('./datasets/AG_NEWS/dataTest' + '_train_' + str(batch_sizes[0]) + '_test_' + str(batch_sizes[-1]), 'rb') as f:
-                test_prep = pickle.load(f)
-            with open('./datasets/AG_NEWS/dataTrain' + '_train_' + str(batch_sizes[0]) + '_test_' + str(batch_sizes[-1]), 'rb') as f:
-                train_prep = pickle.load(f)
-
-            test_prep = to_map_style_dataset(test_prep)
-            train_prep = to_map_style_dataset(train_prep)
-
-        else:
-            print("Prepare Data for Batch Sizes")
-            tokenizer = get_tokenizer('basic_english')
-            processed_text = []
-            test_prep_X = []
-            test_prep_Y = []
-            train_prep_X = []
-            train_prep_Y = []
-
-            for i, (label, text) in enumerate(test_iter):
-                # if i == batch_sizes[-1]:
-                #     break
-                processed = tokenizer(text)
-                processed_text.extend(processed)
-                test_prep_X.append(text)
-                test_prep_Y.append(label)
-
-            vocab_processed = set(processed_text)
-
-            for label, text in tqdm(train_iter):
-                missing = 0
-                processed = tokenizer(text)
-                for word in processed:
-                    if word not in list(vocab_processed):
-                        missing += 1
-                if (missing / len(processed)) <= 0.1:
-                    train_prep_X.append(text)
-                    train_prep_Y.append(label)
-
-            test_prep = IterableWrapper(list(zip(test_prep_Y, test_prep_X)))
-            train_prep = IterableWrapper(list(zip(train_prep_Y, train_prep_X)))
-
-            print("dump new Data")
-
-            with open('./datasets/AG_NEWS/dataTest' + '_train_' + str(batch_sizes[0]) + '_test_' + str(batch_sizes[-1]), 'wb') as f:
-                pickle.dump(test_prep, f)
-            with open('./datasets/AG_NEWS/dataTrain' + '_train_' + str(batch_sizes[0]) + '_test_' + str(batch_sizes[-1]), 'wb') as f:
-                pickle.dump(train_prep, f)
-
-            test_prep = to_map_style_dataset(test_prep)
-            train_prep = to_map_style_dataset(train_prep)
-
-        train_loader = DataLoader(train_prep, batch_size=batch_sizes[0],
-                                  shuffle=True, collate_fn=collate_batch, generator=gen_train)
-        test_loader = DataLoader(test_prep, batch_size=batch_sizes[-1], shuffle=True, collate_fn=collate_batch,
                                  generator=gen_test)
 
     return train_loader, test_loader, size_vocab, 4, vocab
