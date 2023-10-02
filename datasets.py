@@ -1,3 +1,8 @@
+"""\
+Code bereitgestellt bei Sebastian Müller:
+https://github.com/lamarr-xai-group/RashomonEffect/blob/main/datasets.py
+(zuletzt besucht 1.10.23)
+"""
 import torch
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence

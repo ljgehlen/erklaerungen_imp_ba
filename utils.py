@@ -1,9 +1,7 @@
 import torch
 import json
 import math
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
 from models import SentenceCNN, BiLSTMClassif
 from imp import pruning
@@ -14,33 +12,25 @@ RESULT_PATH = "./results"
 
 
 def _get_gradients_and_outputs(x, y, model, inference_fn=None, device='cpu', batch_size=1):
-    """
-    calculates outputs and gradients from test data in the model
+    '''
+    Returns the gradients of input in regard to output of model
 
-    parameters:
-        x: text data
+        Parameters:
+            x (DataLoader): Input data
+            y (DataLoader): Label of Inputs
+            model (Module): model
+            inference_fn (function): model forward function for input
+            device (string): device for tensors ('cpu' or 'cuda:...')
+            batch_size (int): batch size for gradients extraction
 
-        y: label data
+        Returns:
+            _y_out (tensor): label distributions of model outputs
+            _pred_grads (tensor): gradients in regard to prediction output
+            _label_grads (tensor): gradients in regard to input label output
+            _y_pred (tensor): predicted labels of model
+            _acc (tensor): accuracy of input
+    '''
 
-        model: model for analysing the data
-
-        inference_fn: forward application in model, uses model embedding function
-
-        device: for tensor usage
-
-        batch_size: number of used data instances per calculation round
-
-    return:
-        _y_out: tensor with model output per instance, shape[data_instances][number_words][number_categories]
-
-        _pred_grads: tensor, gradients per instance i.r.t. prediction, shape[data_instances][number_words][model_emb_dim]
-
-        _label_grads: tensor, gradients per instance i.r.t. label, shape[data_instances][number_words][model_emb_dim]
-
-        _y_pred: tensor with prediction for category, shape[data_instances]
-
-        _acc: float: accuracy of data in model compared to input Y / labels
-    """
     _data = DataLoader(TensorDataset(x), shuffle=False, batch_size=batch_size)
     _labels = DataLoader(TensorDataset(y), shuffle=False, batch_size=batch_size)
     if inference_fn is None:
@@ -73,27 +63,21 @@ def _get_gradients_and_outputs(x, y, model, inference_fn=None, device='cpu', bat
 
 
 def _get_gradients_and_outputs_over_it(folder: str, x, y):
-    """
-    calculates outputs and gradients from test data over all iterations
+    '''
+    Returns the gradients of input in regard to output of model over every iteration
 
-    parameters:
-        folder: string in Form of "LSTM1" or "CNN12"
+        Parameters:
+            folder (str): model
+            x (DataLoader): Input data
+            y (DataLoader): Label of Inputs
 
-        x: text data
-
-        y: label data
-
-    return:
-        _y_out_list: np array with _y_out of _get_gradients_and_outputs over iterations [iterations][_y_out]
-
-        _pred_grads_list: np array with _pred_grads of _get_gradients_and_outputs over iterations [iterations][_pred_grads]
-
-        _label_grads_list: np array with _label_grads of _get_gradients_and_outputs over iterations [iterations][_label_grads]
-
-        _y_pred_list: np array with _y_pred of _get_gradients_and_outputs over iterations [iterations][_y_pred_list]
-
-        _acc_list: float: np array with _acc of _get_gradients_and_outputs over iterations [iterations][_acc]
-    """
+        Returns:
+            _y_out_list (tensor): list (n_iterations) of label distributions of model outputs
+            _pred_grads_list (tensor): list (n_iterations) of gradients in regard to prediction output
+            _label_grads_list (tensor): list (n_iterations) of gradients in regard to input label output
+            _y_pred_list (tensor): list (n_iterations) of predicted labels of model
+            _acc_list (tensor): list (n_iterations) of accuracies of input
+    '''
     path = RESULT_PATH + "/" + folder + "/"
 
     file = path + 'model_info.json'
@@ -122,17 +106,21 @@ def _get_gradients_and_outputs_over_it(folder: str, x, y):
 
 
 def save_grad_and_out_info(folder: str, x, y):
-    """
-        saves gradient and output information over all iterations in folder
+    '''
+        savens the gradients of input in regard to output of model over every iteration in numpy arrays
 
-    parameters:
-        folder: string in Form of "LSTM1" or "CNN12"
+            Parameters:
+                folder (str): model
+                x (DataLoader): Input data
+                y (DataLoader): Label of Inputs
 
-        x: text data
-
-        y: label data
-
-    """
+            Returns:
+                _y_out (tensor): list (n_iterations) of label distributions of model outputs
+                _pred_grads (tensor): list (n_iterations) of gradients in regard to prediction output
+                _label_grads (tensor): list (n_iterations) of gradients in regard to input label output
+                _y_pred (tensor): list (n_iterations) of predicted labels of model
+                _acc (tensor): list (n_iterations) of accuracies of input
+    '''
     _y_out, _pred_grads, _label_grads, _y_pred, _acc_list = _get_gradients_and_outputs_over_it(folder, x, y)
 
     path = "./results/" + folder + "/"
@@ -147,9 +135,7 @@ def save_grad_and_out_info(folder: str, x, y):
 
 
 def get_category(label, dataset='ag_news'):
-    """
-    maps label to name of category
-    """
+    """takes label and dataset  and returns name of the category"""
     category = None
     if dataset == 'ag_news':
         category = AG_NEWS[label]
@@ -157,9 +143,7 @@ def get_category(label, dataset='ag_news'):
 
 
 def get_words(tokenized_data, vocab):
-    """
-    maps tokens in tokenized_data to real words in vocab
-    """
+    """takes token and vocabulary and return the word"""
     words = []
     for token in tokenized_data:
         words.append(vocab.lookup_token(token))
@@ -167,35 +151,24 @@ def get_words(tokenized_data, vocab):
 
 
 def compression_rate(n_iterations=8, pruning_perc=0.5):
-    """
-    generates compression information over iterations i.r.t pruning percentage
-    """
+    """takes iterations and compression rate and returns list of compressions over time"""
     compression_list = []
     for i in range(n_iterations):
         compression_list.append(int(1/((1-pruning_perc)**i)))
     return np.array(compression_list)
 
 
-def plot_best_accuracies(data_list: list, n_iterations=8, pruning_perc=0.5):
-    compression = compression_rate(n_iterations=n_iterations, pruning_perc=pruning_perc)
-    iter_points = np.linspace(1, n_iterations, n_iterations, dtype=int)
-
-    plt.figure(figsize=(12, 6))
-    fig, ax = plt.subplots()
-    for i in range(len(data_list)):
-        ax.plot(iter_points,
-                np.load(RESULT_PATH+"/"+data_list[i]+"/best_acc_of_it.npy"),
-                label=("Model "+str(i+1)))
-
-    ax.set_xticks(iter_points, compression)
-    plt.legend()
-    plt.show()
-
-
 def get_model(folder: str, iteration: int):
     """
     returns model in folder with from specific iteration
     loading pruned models needs preparation for _orig and _mask parameters
+
+        Parameters:
+            folder (str): model
+            iteration (int): iterationd of model that should be loaded
+
+        Returns:
+            model (Module): loaded model
     """
     path = RESULT_PATH + "/" + folder + "/"
 
@@ -278,162 +251,133 @@ def get_variance_over_iterations(folder:str, gradient_type='label'):
     return np.var(gradients, axis=2)
 
 
-def feature_agreement(folder: str, iteration_1, iteration_2, top_k, gradient_type='label'):
-    path = RESULT_PATH + "/" + folder + "/"
-
-    file = path + 'model_info.json'
-    with open(file, 'r') as f:
-        model_info = json.load(f)
-
-    features_agreement = None
-    gradients = None
-    if 0 <= iteration_1 < model_info['n_iterations'] and 0 <= iteration_2 < model_info['n_iterations']:
-        if gradient_type == 'label':
-            gradients = np.load(path + "_label_grads.npy")
-        elif gradient_type == 'pred':
-            gradients = np.load(path + "_pred_grads.npy")
-
-        features_agreement = torch.zeros(gradients.shape[1], dtype=torch.float)
-
-        grad_it_1 = torch.from_numpy(gradients[iteration_1])
-        grad_it_2 = torch.from_numpy(gradients[iteration_2])
-
-        values_it_1, indices_it_1 = torch.topk(torch.abs(grad_it_1), top_k)
-        values_it_2, indices_it_2 = torch.topk(torch.abs(grad_it_2), top_k)
-
-        for i in range(gradients.shape[1]):
-            for indices1 in indices_it_1[i]:
-                for indices2 in indices_it_2[i]:
-                    if indices1 == indices2:
-                        features_agreement[i] += 1
-            features_agreement[i] /= top_k
-
-    return features_agreement
-
-
-def rank_agreement(folder: str, iteration_1, iteration_2, top_k, gradient_type='label'):
-    path = RESULT_PATH + "/" + folder + "/"
-
-    file = path + 'model_info.json'
-    with open(file, 'r') as f:
-        model_info = json.load(f)
-
-    ranks_agreement = None
-    gradients = None
-    if 0 <= iteration_1 < model_info['n_iterations'] and 0 <= iteration_2 < model_info['n_iterations']:
-        if gradient_type == 'label':
-            gradients = np.load(path + "_label_grads.npy")
-        elif gradient_type == 'pred':
-            gradients = np.load(path + "_pred_grads.npy")
-
-        ranks_agreement = torch.zeros(gradients.shape[1], dtype=torch.float)
-
-        grad_it_1 = torch.from_numpy(gradients[iteration_1])
-        grad_it_2 = torch.from_numpy(gradients[iteration_2])
-
-        values_it_1, indices_it_1 = torch.topk(torch.abs(grad_it_1), top_k)
-        values_it_2, indices_it_2 = torch.topk(torch.abs(grad_it_2), top_k)
-
-        for i in range(gradients.shape[1]):
-            for indices1, indices2 in zip(indices_it_1[i], indices_it_2[i]):
-                if indices1 == indices2:
-                    ranks_agreement[i] += 1
-            ranks_agreement[i] /= top_k
-
-    return ranks_agreement
-
-
-def sign_agreement(folder: str, iteration_1, iteration_2, top_k, gradient_type='label'):
-    path = RESULT_PATH + "/" + folder + "/"
-
-    file = path + 'model_info.json'
-    with open(file, 'r') as f:
-        model_info = json.load(f)
-
-    signs_agreement = None
-    gradients = None
-    if 0 <= iteration_1 < model_info['n_iterations'] and 0 <= iteration_2 < model_info['n_iterations']:
-        if gradient_type == 'label':
-            gradients = np.load(path + "_label_grads.npy")
-        elif gradient_type == 'pred':
-            gradients = np.load(path + "_pred_grads.npy")
-
-        signs_agreement = torch.zeros(gradients.shape[1], dtype=torch.float)
-
-        grad_it_1 = torch.from_numpy(gradients[iteration_1])
-        grad_it_2 = torch.from_numpy(gradients[iteration_2])
-
-        values_it_1, indices_it_1 = torch.topk(torch.abs(grad_it_1), top_k)
-        values_it_2, indices_it_2 = torch.topk(torch.abs(grad_it_2), top_k)
-
-        for i in range(gradients.shape[1]):
-            for indices1 in indices_it_1[i]:
-                for indices2 in indices_it_2[i]:
-                    if indices1 == indices2 and np.sign(grad_it_1[i][indices1]) == np.sign(grad_it_2[i][indices2]):
-                        signs_agreement[i] += 1
-            signs_agreement[i] /= top_k
-
-    return signs_agreement
-
-
-def signed_rank_agreement(folder: str, iteration_1, iteration_2, top_k, gradient_type='label'):
-    path = RESULT_PATH + "/" + folder + "/"
-
-    file = path + 'model_info.json'
-    with open(file, 'r') as f:
-        model_info = json.load(f)
-
-    signed_ranks_agreement = None
-    gradients = None
-    if 0 <= iteration_1 < model_info['n_iterations'] and 0 <= iteration_2 < model_info['n_iterations']:
-        if gradient_type == 'label':
-            gradients = np.load(path + "_label_grads.npy")
-        elif gradient_type == 'pred':
-            gradients = np.load(path + "_pred_grads.npy")
-
-        signed_ranks_agreement = torch.zeros(gradients.shape[1], dtype=torch.float)
-
-        grad_it_1 = torch.from_numpy(gradients[iteration_1])
-        grad_it_2 = torch.from_numpy(gradients[iteration_2])
-
-        values_it_1, indices_it_1 = torch.topk(torch.abs(grad_it_1), top_k)
-        values_it_2, indices_it_2 = torch.topk(torch.abs(grad_it_2), top_k)
-
-        for i in range(gradients.shape[1]):
-            for indices1, indices2 in zip(indices_it_1[i], indices_it_2[i]):
-                if indices1 == indices2 and np.sign(grad_it_1[i][indices1]) == np.sign(grad_it_2[i][indices2]):
-                    signed_ranks_agreement[i] += 1
-            signed_ranks_agreement[i] /= top_k
-
-    return signed_ranks_agreement
-
-
-def create_df(data, vocab_size):
+def agreemets(gradients1, gradients2, top_k):
     """
-    creates dataframe of data and cleans up empty columns
+        returns agreements of top features between feature significance (gradients)
 
-    parameters:
-        data: data to encode to Dataframe
+        Parameters:
+            gradients1 (tensor): gradients of model 1
+            gradients2 (tensor): gradients of model 2
+            top_k (int): number of top features
 
-        vocab_size: needed for column names based on tokenizer ids
-
-    return:
-        data_df: pandas Dataframe one-hot encoded like from data
+        Returns:
+            feat (tensor): feature agreement between models
+            sign (tensor): sign agreement between models
+            rank (tensor): rank agreement between models
+            signed rank (tensor): signed rank agreement between models
     """
-    data_np = np.zeros((len(data), vocab_size), dtype=np.int8)
-    for i, instance in enumerate(data):
-        for word in instance:
-            data_np[i][word] = 1
+    feat = torch.zeros(gradients1.shape[0], dtype=torch.float)
+    rank = torch.zeros(gradients1.shape[0], dtype=torch.float)
+    sign = torch.zeros(gradients1.shape[0], dtype=torch.float)
+    signed_rank = torch.zeros(gradients1.shape[0], dtype=torch.float)
 
-    columns = []
-    for i in range(vocab_size):
-        columns.append(str(i + 1))
+    _, indices1 = torch.topk(torch.abs(gradients1), top_k)
+    _, indices2 = torch.topk(torch.abs(gradients2), top_k)
 
-    data_df = pd.DataFrame(data_np, columns=columns)
+    for i in range(gradients1.shape[0]):
+        for ind1 in indices1[i]:
+            for ind2 in indices2[i]:
+                if ind1 == ind2:
+                    feat[i] += 1
+                    if np.sign(gradients1[i][ind1]) == np.sign(gradients2[i][ind2]):
+                        sign[i] += 1
+        feat[i] /= top_k
+        sign[i] /= top_k
 
-    drop_list = [col for col in data_df.columns if sum(data_df[col]) <= 0]
-    data_df.drop(drop_list, axis=1, inplace=True)
-    print(f'{len(drop_list)} columns dropped')
-    print(f'data shape: {data_df.shape}')
+        for ind1, ind2 in zip(indices1[i], indices2[i]):
+            if ind1 == ind2:
+                rank[i] += 1
+                if np.sign(gradients1[i][ind1]) == np.sign(gradients2[i][ind2]):
+                    signed_rank[i] += 1
+        rank[i] /= top_k
+        signed_rank[i] /= top_k
 
-    return data_df
+    return feat, rank, sign, signed_rank
+
+
+def get_agreements_models(folder1: str, folder2: str, iteration=0, top_k=11, gradient_type='label', relevant=None):
+    """
+        returns agreements between two unique models and same iteration
+
+        Parameters:
+            folder1 (str): name for folder of model 1
+            folder2 (str): name for folder of model 2
+            iteration (int): iteration, which gets compared between both models
+            top_k (int): number of top features
+            gradient_type (str): compare gradients in regard to label or prediction
+            relevant (list[int]): subset of gradients to extract
+
+        Returns:
+            feat (tensor): feature agreement between models
+            sign (tensor): sign agreement between models
+            rank (tensor): rank agreement between models
+            signed rank (tensor): signed rank agreement between models
+    """
+    path1 = RESULT_PATH + "/" + folder1 + "/"
+    path2 = RESULT_PATH + "/" + folder2 + "/"
+
+    if gradient_type == 'label':
+        gradients1 = np.load(path1 + "_label_grads.npy")
+        gradients2 = np.load(path2 + "_label_grads.npy")
+    elif gradient_type == 'pred':
+        gradients1 = np.load(path1 + "_pred_grads.npy")
+        gradients2 = np.load(path2 + "_pred_grads.npy")
+
+    grads1 = None
+    grads2 = None
+
+    if relevant is None:
+        grads1 = gradients1[iteration]
+        grads2 = gradients2[iteration]
+    else:
+        grads1 = np.zeros((len(relevant), gradients1.shape[2]), dtype=float)
+        grads2 = np.zeros((len(relevant), gradients1.shape[2]), dtype=float)
+
+        for i, r in enumerate(relevant):
+            grads1[i] = gradients1[iteration][int(r)]
+            grads2[i] = gradients2[iteration][int(r)]
+
+    return agreemets(torch.from_numpy(grads1), torch.from_numpy(grads2), top_k)
+
+
+def get_agreements_iterations(folder: str, iteration1=0, iteration2=1, top_k=11, gradient_type='label', relevant=None):
+    """
+        returns agreements between two unique models and same iteration
+
+        Parameters:
+            folder (str): name for folder of model
+            iteration1 (int): first iteration to compare
+            iteration2 (int): second iteration to compare
+            top_k (int): number of top features
+            gradient_type (str): compare gradients in regard to label or prediction
+            relevant (list[int]): subset of gradients to extract
+
+        Returns:
+            feat (tensor): feature agreement between models
+            sign (tensor): sign agreement between models
+            rank (tensor): rank agreement between models
+            signed rank (tensor): signed rank agreement between models
+        """
+    path = RESULT_PATH + "/" + folder + "/"
+
+    if gradient_type == 'label':
+        gradients = np.load(path + "_label_grads.npy")
+    elif gradient_type == 'pred':
+        gradients = np.load(path + "_pred_grads.npy")
+
+    grads1 = None
+    grads2 = None
+
+    if relevant is None:
+        grads1 = gradients[iteration1]
+        grads2 = gradients[iteration2]
+    else:
+        grads1 = np.zeros((len(relevant), gradients.shape[2]), dtype=float)
+        grads2 = np.zeros((len(relevant), gradients.shape[2]), dtype=float)
+
+        for i, r in enumerate(relevant):
+            grads1[i] = gradients[iteration1][int(r)]
+            grads2[i] = gradients[iteration2][int(r)]
+
+    return agreemets(torch.from_numpy(grads1), torch.from_numpy(grads2), top_k)
+

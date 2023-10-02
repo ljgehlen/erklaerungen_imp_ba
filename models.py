@@ -1,3 +1,8 @@
+"""\
+Code bereitgestellt bei Sebastian Müller:
+https://github.com/lamarr-xai-group/RashomonEffect/blob/main/models.py
+(zuletzt besucht 1.10.23)
+"""
 import torch
 from torch import nn
 from torch.nn import functional as F

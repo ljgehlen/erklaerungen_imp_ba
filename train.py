@@ -1,3 +1,6 @@
+"""\
+Code bereitgestellt bei Sebastian Müller
+"""
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
@@ -46,6 +49,7 @@ def train(model, optim, loss_fn, tr_data: DataLoader, te_data: DataLoader, infer
     test_loss_val = []
     train_loss = 0.0
     _epochs = 0
+    trained_batches = 0
     for text, labels in tqdm(tr_data):
         text = text.to(device)
         labels = labels.to(device)
@@ -55,12 +59,12 @@ def train(model, optim, loss_fn, tr_data: DataLoader, te_data: DataLoader, infer
         loss.backward()
         optim.step()
         train_loss += loss.item()
+        trained_batches += 1
 
-    for text, labels in te_data:
-        test_acc, test_loss = validate(inference_fn, model, text, labels, loss_fn)
-        test_acc_val.append(test_acc)
-        test_loss_val.append(test_loss)
+    test_acc, test_loss = validate(inference_fn, model, *te_data, loss_fn)
+    test_acc_val.append(test_acc)
+    test_loss_val.append(test_loss)
     acc = torch.mean(torch.tensor(test_acc_val))
     test_loss = torch.mean(torch.tensor(test_loss_val))
-    average_train_loss = train_loss / len(tr_data)
+    average_train_loss = train_loss / trained_batches
     return model, acc.item(), test_loss.item(), average_train_loss

@@ -27,7 +27,7 @@ def pruning(model, pruning_perc=0.5, pruning_type='global', prune_embedding=True
                 prune.l1_unstructured(module, 'weight_ih_l0_reverse', pruning_perc)
                 prune.l1_unstructured(module, 'weight_hh_l0_reverse', pruning_perc)
 
-    # global pruning using global_unstructured
+    # global pruning using global_unstructured (L1_Norm), Embedding local
     elif pruning_type == 'global':
 
         # get relevant layers
@@ -43,6 +43,70 @@ def pruning(model, pruning_perc=0.5, pruning_type='global', prune_embedding=True
 
         prune.global_unstructured(parameters, pruning_method=prune.L1Unstructured, amount=pruning_perc)
 
+    # unmodified global pruning using global_unstructured (L1_Norm)
+    elif pruning_type == 'global_unmodified':
+
+        # get relevant layers
+        parameters = []
+        for module_name, module in model.named_modules():
+            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                parameters.append((module, "weight"))
+            elif prune_embedding is True and isinstance(module, torch.nn.Embedding):
+                parameters.append((module, "weight"))
+            elif isinstance(module, torch.nn.LSTM):
+                parameters.extend(((module, "weight_ih_l0"), (module, "weight_hh_l0"),
+                                (module, "weight_ih_l0_reverse"), (module, "weight_hh_l0_reverse")))
+
+        prune.global_unstructured(parameters, pruning_method=prune.L1Unstructured, amount=pruning_perc)
+
+    return model
+
+
+def pruning_random(model, pruning_perc=0.5, pruning_type='global', prune_embedding=True):
+    # local pruning using random_unstructured
+    if pruning_type == 'local':
+        for module_name, module in model.named_modules():
+            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear) or \
+                    (prune_embedding is True and isinstance(module, torch.nn.Embedding)):
+                prune.random_unstructured(module, 'weight', pruning_perc)
+            elif isinstance(module, torch.nn.LSTM):
+                prune.random_unstructured(module, 'weight_ih_l0', pruning_perc)
+                prune.random_unstructured(module, 'weight_hh_l0', pruning_perc)
+                prune.random_unstructured(module, 'weight_ih_l0_reverse', pruning_perc)
+                prune.random_unstructured(module, 'weight_hh_l0_reverse', pruning_perc)
+
+    # global pruning using global_unstructured (Random), Embedding local
+    elif pruning_type == 'global':
+
+        # get relevant layers
+        parameters = []
+        for module_name, module in model.named_modules():
+            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                parameters.append((module, "weight"))
+            elif prune_embedding is True and isinstance(module, torch.nn.Embedding):
+                prune.random_unstructured(module, 'weight', pruning_perc)
+            elif isinstance(module, torch.nn.LSTM):
+                parameters.extend(((module, "weight_ih_l0"), (module, "weight_hh_l0"),
+                                   (module, "weight_ih_l0_reverse"), (module, "weight_hh_l0_reverse")))
+
+        prune.global_unstructured(parameters, pruning_method=prune.RandomUnstructured, amount=pruning_perc)
+
+    # unmodified global pruning using global_unstructured
+    elif pruning_type == 'global_unmodified':
+
+        # get relevant layers
+        parameters = []
+        for module_name, module in model.named_modules():
+            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+                parameters.append((module, "weight"))
+            elif prune_embedding is True and isinstance(module, torch.nn.Embedding):
+                parameters.append((module, "weight"))
+            elif isinstance(module, torch.nn.LSTM):
+                parameters.extend(((module, "weight_ih_l0"), (module, "weight_hh_l0"),
+                                   (module, "weight_ih_l0_reverse"), (module, "weight_hh_l0_reverse")))
+
+        prune.global_unstructured(parameters, pruning_method=prune.RandomUnstructured, amount=pruning_perc)
+
     return model
 
 
@@ -56,8 +120,8 @@ def reset_model(model, init_model, prune_embedding=True):
             # clean model of pruning masks for proper reset
             prune.remove(module, "weight")
         elif isinstance(module, torch.nn.LSTM):
-            masks.extend(((module.weight_ih_l0_mask), (module.weight_hh_l0_mask),
-                          (module.weight_ih_l0_reverse_mask), (module.weight_hh_l0_reverse_mask)))
+            masks.extend((module.weight_ih_l0_mask, module.weight_hh_l0_mask,
+                          module.weight_ih_l0_reverse_mask, module.weight_hh_l0_reverse_mask))
 
             prune.remove(module, "weight_ih_l0")
             prune.remove(module, "weight_hh_l0")
@@ -130,17 +194,19 @@ def check_perc(model, prune_embedding=True):
 
 
 def imp_loop(path, model, init_model, best_model, device, optimizer, loss_fun, n_epochs, late_rewind,
-             pruning_type, pruning_perc, prune_embedding, n_iterations, tr_data: DataLoader, te_data: DataLoader):
+             pruning_type, pruning_perc, prune_embedding, prune_random, n_iterations, tr_data: DataLoader,
+             te_data: tuple):
 
+    # data to save
     best_acc_of_it = np.zeros(n_iterations, dtype=float)  # shape: (n_iterations)
     best_epoch_of_it = np.zeros(n_iterations, dtype=int)  # shape: (n_iterations)
+    last_epoch_of_it = np.zeros(n_iterations, dtype=int)  # shape: (n_iterations)
     acc_of_epochs_over_it = np.zeros((n_iterations, n_epochs), dtype=float)  # shape: (n_iterations x n_epochs)
     test_losses_of_epoch_over_it = np.zeros((n_iterations, n_epochs), dtype=float)  # shape: (n_iterations x n_epochs)
     train_losses_of_epoch_over_it = np.zeros((n_iterations, n_epochs), dtype=float)  # shape: (n_iterations x n_epochs)
 
     active_model = model
-    delta = 0.001
-    patience = 3
+    patience = int(n_epochs*0.5)
 
     if not os.path.exists(path):
         os.makedirs(path)
@@ -150,9 +216,13 @@ def imp_loop(path, model, init_model, best_model, device, optimizer, loss_fun, n
         print("----------------------------------------")
         print(f"iteration: {iteration+1}")
 
+        # prune starting from second iteration
         if iteration > 0:
             print(f"pruning model by {pruning_perc}")
-            active_model = pruning(active_model, pruning_perc, pruning_type, prune_embedding)
+            if prune_random is False:
+                active_model = pruning(active_model, pruning_perc, pruning_type, prune_embedding)
+            else:
+                active_model = pruning_random(active_model, pruning_perc, pruning_type, prune_embedding)
             active_model = reset_model(active_model, init_model, prune_embedding)
             if iteration == 1:
                 best_model = pruning(best_model, pruning_perc, pruning_type, prune_embedding)
@@ -160,7 +230,6 @@ def imp_loop(path, model, init_model, best_model, device, optimizer, loss_fun, n
 
         early_stop = False
         last_update = 0
-        min_test_loss = 1000000
         epoch = 0
         test_loss = 0
         train_loss = 0
@@ -171,6 +240,7 @@ def imp_loop(path, model, init_model, best_model, device, optimizer, loss_fun, n
             print("----------------------------------------")
             print(f"iteration {iteration+1} on epoch {epoch+1}")
 
+            check_perc(model)
             active_model, test_acc, test_loss, train_loss = train(model, optimizer, loss_fun, tr_data, te_data,
                                                                   inference_fn=model.forward_softmax, device=device)
 
@@ -179,13 +249,12 @@ def imp_loop(path, model, init_model, best_model, device, optimizer, loss_fun, n
             train_losses_of_epoch_over_it[iteration][epoch] = train_loss
             acc_of_epochs_over_it[iteration][epoch] = test_acc
 
-            if test_loss < min_test_loss:
-                min_test_loss = test_loss
+            if best_acc < test_acc:
                 best_acc = test_acc
                 best_acc_epoch = epoch
                 best_model.load_state_dict(active_model.state_dict())
                 last_update = 0
-            elif test_loss >= (min_test_loss + delta):
+            else:
                 last_update += 1
 
             if last_update >= patience:
@@ -197,9 +266,11 @@ def imp_loop(path, model, init_model, best_model, device, optimizer, loss_fun, n
 
             epoch += 1
 
-        print(f"stopped in iteration {iteration + 1} after epoch {epoch} with best acc {best_acc}")
+        last_epoch_of_it[iteration] = epoch-1
+
+        print(f"stopped in iteration {iteration + 1} after epoch {epoch} with acc {best_acc}")
         if early_stop is True:
-            print("early stop because of increasing test loss")
+            print("early stop because of no increase in test accuracy")
             while epoch < n_epochs:
                 test_losses_of_epoch_over_it[iteration][epoch] = test_loss
                 train_losses_of_epoch_over_it[iteration][epoch] = train_loss
@@ -214,14 +285,14 @@ def imp_loop(path, model, init_model, best_model, device, optimizer, loss_fun, n
 
         iteration += 1
 
-    return best_acc_of_it, best_epoch_of_it, acc_of_epochs_over_it, test_losses_of_epoch_over_it,\
+    return best_acc_of_it, best_epoch_of_it, last_epoch_of_it, acc_of_epochs_over_it, test_losses_of_epoch_over_it,\
         train_losses_of_epoch_over_it
 
 
-def create_imp_model(model_type, device=None,
+def create_imp_model(model_type, model=None, device=None,
                      dataset='ag_news', size_train_batch=64, size_test_batch=1028,
-                     embed_dim=128, n_epochs=10, late_rewind=False,
-                     n_iterations=8, pruning_perc=0.5, pruning_type='global', prune_embedding=True):
+                     embed_dim=128, n_epochs=20, late_rewind=True,
+                     n_iterations=8, pruning_perc=0.5, pruning_type='global', prune_embedding=True, prune_random=False):
 
     if device is None:
         device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -236,19 +307,22 @@ def create_imp_model(model_type, device=None,
     if dataset == 'ag_news':
         train_set, test_set, vocab_size, n_classes, vocab = get_agnews(random_state=42,
                                                                    batch_sizes=(size_train_batch, size_test_batch))
+
+        X_test, Y_test = next(iter(test_set))
         dataset_loaded = True
     else:
         print(f"could not read and load dataset: {dataset}")
 
-    model = None
     init_model = None
     best_model = None
     if model_type == "CNN" and dataset_loaded is True:
-        model = SentenceCNN(n_classes=n_classes, embed_dim=embed_dim, vocab_size=vocab_size)
+        if model is None:
+            model = SentenceCNN(n_classes=n_classes, embed_dim=embed_dim, vocab_size=vocab_size)
         init_model = SentenceCNN(n_classes=n_classes, embed_dim=embed_dim, vocab_size=vocab_size)
         best_model = SentenceCNN(n_classes=n_classes, embed_dim=embed_dim, vocab_size=vocab_size)
     elif model_type == "LSTM" and dataset_loaded is True:
-        model = BiLSTMClassif(n_classes=n_classes, embed_dim=embed_dim, vocab_size=vocab_size, hid_size=64)
+        if model is None:
+            model = BiLSTMClassif(n_classes=n_classes, embed_dim=embed_dim, vocab_size=vocab_size, hid_size=64)
         init_model = BiLSTMClassif(n_classes=n_classes, embed_dim=embed_dim, vocab_size=vocab_size, hid_size=64)
         best_model = BiLSTMClassif(n_classes=n_classes, embed_dim=embed_dim, vocab_size=vocab_size, hid_size=64)
 
@@ -263,10 +337,10 @@ def create_imp_model(model_type, device=None,
         path = unique_path(path)
         _t_start = time.time()
 
-        best_acc_of_it, best_epoch_of_it, acc_of_epochs_over_it, test_losses_of_epoch_over_it,\
+        best_acc_of_it, best_epoch_of_it, last_epoch_of_it, acc_of_epochs_over_it, test_losses_of_epoch_over_it,\
             train_losses_of_epoch_over_it = imp_loop(path, model, init_model, best_model, device, optimizer, loss_fun,
                                                      n_epochs, late_rewind, pruning_type, pruning_perc, prune_embedding,
-                                                     n_iterations, train_set, test_set)
+                                                     prune_random, n_iterations, train_set, (X_test, Y_test))
 
         _t_end = time.time()
         print(f"Training finished in {int(_t_end - _t_start)} s")
@@ -296,6 +370,7 @@ def create_imp_model(model_type, device=None,
         np.save(path + "/train_losses_of_epoch_over_it.npy", train_losses_of_epoch_over_it)
         np.save(path + "/best_acc_of_it.npy", best_acc_of_it)
         np.save(path + "/best_epoch_of_it.npy", best_epoch_of_it)
+        np.save(path + "/last_epoch_of_it.npy", last_epoch_of_it)
 
         with open(path + '/readme.txt', 'w') as f:
             f.write(str(model_type))
@@ -317,8 +392,8 @@ def create_imp_model(model_type, device=None,
             f.write("prune_embedding: " + str(prune_embedding))
             f.write('\n')
             for i in range(n_iterations):
-                f.write(str((1-pruning_perc) ** i) + ", best acc: " + str(best_acc_of_it[i]) + " in epoch: " + str(
-                    best_epoch_of_it[i]))
+                f.write(str((1-pruning_perc) ** i) + ", loss: " + str(test_losses_of_epoch_over_it[i][best_epoch_of_it[i]]) + ", acc: " +
+                        str(best_acc_of_it[i]) + " in epoch: " + str(best_epoch_of_it[i]) + ", after stopping in epoch: " + str(last_epoch_of_it[i]))
                 f.write('\n')
 
         print(f'results saved in {path}')

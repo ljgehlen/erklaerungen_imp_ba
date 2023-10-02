@@ -1,7 +1,9 @@
 import os
 
+
 # https://stackoverflow.com/a/57896232
 def unique_path(initial_path):
+    '''creates unique folder_names '''
     counter = 1
     path = initial_path + str(counter)
 
